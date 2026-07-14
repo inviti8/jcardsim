@@ -376,7 +376,7 @@ public class APDUProxy {
 
     public void sendBytes(short bOff, short len)
             throws APDUException {
-        final short max = extended ? Short.MAX_VALUE : T0_OBS;
+        final short max = extended ? Short.MAX_VALUE : (short) buffer.length;
         if (bOff < 0 || len < 0 || (short) (bOff + len) > max) {
             APDUException.throwIt(APDUException.BUFFER_BOUNDS);
         }

@@ -267,7 +267,9 @@ public abstract class ECKeyImpl extends KeyImpl implements ECKey {
             case 256:
             case 384:
             case 521:
-                if ((keyType != KeyBuilder.TYPE_EC_FP_PRIVATE) & (keyType != KeyBuilder.TYPE_EC_FP_PUBLIC)) {
+                if ((keyType != KeyBuilder.TYPE_EC_FP_PRIVATE) & (keyType != KeyBuilder.TYPE_EC_FP_PUBLIC)
+                        & (keyType != KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_RESET)
+                        & (keyType != KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT)) {
                     CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
                 }
                 curveName = "secp" + keySize + "r1";

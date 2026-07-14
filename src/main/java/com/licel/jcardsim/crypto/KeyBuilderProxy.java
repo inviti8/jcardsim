@@ -91,6 +91,8 @@ public class KeyBuilderProxy {
                 key = new ECPublicKeyImpl(keyType, keyLength);
                 break;
             case KeyBuilder.TYPE_EC_FP_PRIVATE:
+            case KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_RESET:
+            case KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT:
                 key = new ECPrivateKeyImpl(keyType, keyLength);
                 break;
 

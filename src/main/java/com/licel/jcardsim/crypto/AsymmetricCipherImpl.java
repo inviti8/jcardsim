@@ -15,16 +15,19 @@
  */
 package com.licel.jcardsim.crypto;
 
+import java.math.BigInteger;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.CryptoException;
 import javacard.security.Key;
 import javacardx.crypto.Cipher;
 import org.bouncycastle.crypto.AsymmetricBlockCipher;
+import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.InvalidCipherTextException;
 import org.bouncycastle.crypto.encodings.PKCS1Encoding;
 import org.bouncycastle.crypto.engines.RSAEngine;
 import org.bouncycastle.crypto.paddings.BlockCipherPadding;
+import org.bouncycastle.crypto.params.RSAKeyParameters;
 
 /*
  * Implementation <code>Cipher</code> with asymmetric keys based
@@ -39,6 +42,10 @@ public class AsymmetricCipherImpl extends Cipher {
     boolean isInitialized;
     byte[] buffer;
     short bufferPos;
+    // raw modPow state for ALG_RSA_NOPAD: real cards operate on full key-length
+    // blocks with arbitrary exponents (e.g. e=2 squaring, modular inversion),
+    // which BouncyCastle's RSAEngine block-size rules reject
+    RSAKeyParameters rawRsaKey;
 
     public AsymmetricCipherImpl(byte algorithm) {
         this.algorithm = algorithm;
@@ -68,8 +75,16 @@ public class AsymmetricCipherImpl extends Cipher {
             CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
         }
         KeyWithParameters key = (KeyWithParameters) theKey;
-        engine.init(theMode == MODE_ENCRYPT, key.getParameters());
-        buffer = JCSystem.makeTransientByteArray((short) engine.getInputBlockSize(), JCSystem.CLEAR_ON_DESELECT);
+        CipherParameters params = key.getParameters();
+        if (algorithm == ALG_RSA_NOPAD && params instanceof RSAKeyParameters) {
+            // card-faithful raw modPow over key-length blocks
+            rawRsaKey = (RSAKeyParameters) params;
+            buffer = JCSystem.makeTransientByteArray((short) ((rawRsaKey.getModulus().bitLength() + 7) / 8), JCSystem.CLEAR_ON_DESELECT);
+        } else {
+            rawRsaKey = null;
+            engine.init(theMode == MODE_ENCRYPT, params);
+            buffer = JCSystem.makeTransientByteArray((short) engine.getInputBlockSize(), JCSystem.CLEAR_ON_DESELECT);
+        }
         bufferPos = 0;
         isInitialized = true;
     }
@@ -85,6 +100,27 @@ public class AsymmetricCipherImpl extends Cipher {
     public short doFinal(byte[] inBuff, short inOffset, short inLength, byte[] outBuff, short outOffset) throws CryptoException {
         if (!isInitialized) {
             CryptoException.throwIt(CryptoException.INVALID_INIT);
+        }
+        if (rawRsaKey != null) {
+            short blockSize = (short) buffer.length;
+            if ((short) (outBuff.length - outOffset) < blockSize) {
+                CryptoException.throwIt(CryptoException.ILLEGAL_USE);
+            }
+            update(inBuff, inOffset, inLength, outBuff, outOffset);
+            if (bufferPos < blockSize) {
+                CryptoException.throwIt(CryptoException.ILLEGAL_USE);
+            }
+            BigInteger x = new BigInteger(1, buffer);
+            byte[] result = x.modPow(rawRsaKey.getExponent(), rawRsaKey.getModulus()).toByteArray();
+            short skip = (short) (result.length > blockSize ? result.length - blockSize : 0);
+            short copyLen = (short) (result.length - skip);
+            Util.arrayFillNonAtomic(outBuff, outOffset, (short) (blockSize - copyLen), (byte) 0);
+            for (short i = 0; i < copyLen; i++) {
+                outBuff[(short) (outOffset + blockSize - copyLen + i)] = result[skip + i];
+            }
+            bufferPos = 0;
+            Util.arrayFillNonAtomic(buffer, (short) 0, blockSize, (byte) 0);
+            return blockSize;
         }
         if ((outBuff.length - outOffset) < engine.getOutputBlockSize()) {
             CryptoException.throwIt(CryptoException.ILLEGAL_USE);

@@ -77,6 +77,28 @@ public class KeyAgreementImpl extends KeyAgreement {
         return algorithm;
     }
 
+    /**
+     * Rejects public points that are not on the private key's curve, like real cards do.
+     * BouncyCastle 1.46 does not validate decoded points itself, which makes the outcome
+     * of an agreement with an invalid point (e.g. 0,0) depend on the private scalar.
+     */
+    private static void checkOnCurve(org.bouncycastle.math.ec.ECPoint point) throws CryptoException {
+        if (point.isInfinity()) {
+            CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
+        }
+        if (point instanceof org.bouncycastle.math.ec.ECPoint.Fp) {
+            org.bouncycastle.math.ec.ECFieldElement x = point.getX();
+            org.bouncycastle.math.ec.ECFieldElement y = point.getY();
+            org.bouncycastle.math.ec.ECFieldElement lhs = y.square();
+            org.bouncycastle.math.ec.ECFieldElement rhs = x.square().multiply(x)
+                    .add(point.getCurve().getA().multiply(x))
+                    .add(point.getCurve().getB());
+            if (!lhs.equals(rhs)) {
+                CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
+            }
+        }
+    }
+
     public short generateSecret(byte[] publicData,
             short publicOffset,
             short publicLength,
@@ -84,9 +106,22 @@ public class KeyAgreementImpl extends KeyAgreement {
             short secretOffset) throws CryptoException {
         byte[] publicKey = new byte[publicLength];
         Util.arrayCopyNonAtomic(publicData, publicOffset, publicKey, (short) 0, publicLength);
-        ECPublicKeyParameters ecp = new ECPublicKeyParameters(
-                ((ECPrivateKeyParameters) privateKey.getParameters()).getParameters().getCurve().decodePoint(publicKey), ((ECPrivateKeyParameters) privateKey.getParameters()).getParameters());
-        byte[] num = engine.calculateAgreement(ecp).toByteArray();
+        byte[] num;
+        try {
+            org.bouncycastle.math.ec.ECPoint point =
+                    ((ECPrivateKeyParameters) privateKey.getParameters()).getParameters().getCurve().decodePoint(publicKey);
+            checkOnCurve(point);
+            ECPublicKeyParameters ecp = new ECPublicKeyParameters(
+                    point, ((ECPrivateKeyParameters) privateKey.getParameters()).getParameters());
+            num = engine.calculateAgreement(ecp).toByteArray();
+        } catch (CryptoException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // real cards reject invalid public points with ILLEGAL_VALUE instead of
+            // leaking the underlying provider exception
+            CryptoException.throwIt(CryptoException.ILLEGAL_VALUE);
+            return (short) -1;
+        }
         byte[] result;
 
         if (this.algorithm != ALG_EC_SVDP_DH_PLAIN_XY) {
