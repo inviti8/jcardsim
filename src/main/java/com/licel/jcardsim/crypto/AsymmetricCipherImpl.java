@@ -77,9 +77,11 @@ public class AsymmetricCipherImpl extends Cipher {
         KeyWithParameters key = (KeyWithParameters) theKey;
         CipherParameters params = key.getParameters();
         if (algorithm == ALG_RSA_NOPAD && params instanceof RSAKeyParameters) {
-            // card-faithful raw modPow over key-length blocks
+            // card-faithful raw modPow over key-length blocks. The block size is the key's declared
+            // size, not the modulus bit length: a zero-padded modulus (JCMathLib's RSA_RESIZE_MOD)
+            // still takes and returns full key-length blocks on a card.
             rawRsaKey = (RSAKeyParameters) params;
-            buffer = JCSystem.makeTransientByteArray((short) ((rawRsaKey.getModulus().bitLength() + 7) / 8), JCSystem.CLEAR_ON_DESELECT);
+            buffer = JCSystem.makeTransientByteArray((short) ((theKey.getSize() + 7) / 8), JCSystem.CLEAR_ON_DESELECT);
         } else {
             rawRsaKey = null;
             engine.init(theMode == MODE_ENCRYPT, params);
