@@ -356,6 +356,22 @@ public class JCSystemProxy {
     }
 
     /**
+     * Obtains the amount of memory of the specified type that is available to the
+     * applet, as an int split over two shorts (Java Card 3.0.4+): <code>buffer[offset]</code>
+     * holds the high 16 bits and <code>buffer[offset+1]</code> the low 16 bits.
+     * @param buffer the output buffer, at least two shorts from <code>offset</code>
+     * @param offset the offset in <code>buffer</code>
+     * @param memoryType the type of memory being queried
+     * @throws SystemException with <code>SystemException.ILLEGAL_VALUE</code> for an unknown type
+     */
+    public static void getAvailableMemory(short[] buffer, short offset, byte memoryType)
+            throws SystemException {
+        short available = getAvailableMemory(memoryType);
+        buffer[offset] = 0;
+        buffer[(short) (offset + 1)] = available;
+    }
+
+    /**
      * Called by a client applet to get a server applet's
      * shareable interface object. <p>This method returns <code>null</code>
      * if:
